@@ -1,0 +1,64 @@
+---
+title: "SST_validation_data_wrangling"
+author: "Katie Nigro"
+date: "2026-09-16"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+```
+
+```{r}
+source("climate_match_fxn.R")
+source("calc_match_scores.R")
+
+```
+
+```{r}
+#read in DEMs and compile for the Western US
+dem_rast1 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150.tif")
+dem_rast2 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N50W120_150/50n120w_20101117_gmted_mea150.tif")
+dem_rast3 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W150_150/30n150w_20101117_gmted_mea150.tif")
+dem_rast4 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N50W150_150/50n150w_20101117_gmted_mea150.tif")
+
+dem_west <- mosaic(dem_rast1, dem_rast2, dem_rast3, dem_rast4, fun="first")
+
+us <- geodata::gadm(country = "USA",  level = 1, resolution = 2,
+                    path = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/PIENproject")
+```
+
+```{r}
+##read in individual data files and combine
+pico_data <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/Lodgepole_data_KW.csv") %>% 
+  mutate(provenance_name=paste0(substr(provenance_name,0,2), provenance_elev_m),
+         block=as.character(block))
+pien_data <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/all_data_pien_forSST.csv") %>% 
+  filter(!is.na(provenance_lat))
+pipo_dixit_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/Dixit_PIPO_survival.csv") %>% 
+  mutate(treeID = as.character(treeID))
+pipo_nigro_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/planted_COpondo_forSST.csv") %>% 
+  filter(!planting_site_name=="ML") %>%  ##removing ML since it had very different canopy conditions
+  mutate(years_since_planting = as.numeric(ifelse(years_since_planting == "initial", 0, years_since_planting)))
+pied_redmond_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/PUR_germdat_NigroSST_EMH_Aug2026.csv") %>% 
+  mutate(provenance_name=substr(provenance_name, 0,3))
+pimo_urza_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/Urza_P.monophylla_data_forSST_seedlingdata.csv") %>% 
+  mutate(block=as.character(block), treeID=as.character(treeID), month.of.planting=as.character(month.of.planting), month.of.measurement=as.character(month.of.measurement))
+
+all_data <- bind_rows(pico_data, pien_data, pipo_dixit_data, pipo_nigro_data, pied_redmond_data, pimo_urza_data) %>% 
+  select(species, planting_site_name, planting_site_lat, planting_site_lon, planting_site_elev_m, provenance_name,provenance_lat, provenance_lon, provenance_elev_m) %>% 
+  unique()
+```
+
+```{r}
+##process data and calculate climate match scores for all transfers in all studies
+
+all_match_scores_mcmt_shm<- getmatchscores(data=all_data, varList=c("MCMT","SHM"), refperiod="Normal_1961_1990.nrm", targetperiod= c("Normal_1991_2020.nrm", "8GCMs_ensemble_ssp245_2011-2040.gcm"), mcmt_TL=2) ##this took ~1 min
+
+```
