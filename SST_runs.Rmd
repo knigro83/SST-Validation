@@ -1,0 +1,1502 @@
+---
+title: "SST Validation Project"
+author: "Katie Nigro"
+date: "2026-08-04"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load libraries
+```{r}
+library(ClimateNAr)
+library(terra)
+library(tidyverse)
+library(ggplot2)
+library(tidyterra)
+library(pals)
+```
+
+
+#Web API
+
+```{r, eval=FALSE}
+#install.packages("httr2")
+library(httr)
+library(jsonlite)
+
+
+############## for loop using GET with ClimateNA API, historic 1970's normal ######################
+seedlots = pien_pts %>% 
+  rename(el=elev, lon=long, ID1 = no, ID2 = Provenance) %>% 
+  select(-source) %>% 
+  filter(!ID2=="Plantation")
+  
+
+seedlot_clim_compiled = data.frame()
+for(i in 1:nrow(seedlots)){
+  normal_61_90 = GET("https://api.climatena.ca/api/cnaApi6/LatLonEl", query = list(ID1 = seedlots$ID1[i], ID2 = seedlots$ID2[i], lat=seedlots$lat[i], lon=seedlots$lon[i], el=seedlots$el[i], prd="Normal_1961_1990.nrm", varYSM="Y"))
+  
+  data=fromJSON(rawToChar(normal_61_90$content))
+  
+  seedlot_clim_compiled <- bind_rows(seedlot_clim_compiled, data)
+
+}
+
+seedlot_clim_compiled
+
+###############################################################################
+points_2020s = pien_pts %>% 
+  rename(el=elev, lon=long, ID1 = no, ID2 = Provenance) %>% 
+  select(-source) %>% 
+  mutate(prd="8GCMs_ensemble_ssp245_2011-2040.gcm", varYSM="Y")
+  
+
+res_compiled_2020s = data.frame()
+for(i in 1:nrow(points_2020s)){
+  res = GET("https://api.climatena.ca/api/cnaApi6/LatLonEl", query = list(ID1 = points_2020s$ID1[i], ID2 = points_2020s$ID2[i], lat=points_2020s$lat[i], lon=points_2020s$lon[i], el=points_2020s$el[i], prd=points_2020s$prd[i], varYSM=points_2020s$varYSM[i]))
+  
+  data=fromJSON(rawToChar(res$content))
+  
+  res_compiled_2020s <- bind_rows(res_compiled_2020s, data)
+
+}
+
+res_compiled_2020s
+
+```
+
+
+Trying R package
+
+```{r, eval=FALSE}
+#install.packages('C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ClimateNAr.zip', repos=NULL)
+
+
+###crop DEM
+
+dem <- "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150.tif"
+us <- geodata::gadm(country = "USA",  level = 1, resolution = 2,
+             path = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/PIENproject")
+us_CO <- us[match("Colorado",us$NAME_1),]
+  
+
+
+dem_rast <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150.tif")
+dem_crop_CO <- crop(dem_rast, ext(us_CO))
+plot(dem_crop_CO)
+crs(dem_crop_CO)
+
+writeRaster(dem_crop_CO, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/30n120w_20101117_gmted_mea150_cropCO.tif")
+
+
+###cropped
+demToCSV("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150_cropCO.tif")
+
+dem_csv_crop_CO <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150_cropCO.csv")
+head(dem_csv_crop_CO)
+
+
+###the whole thing
+demToCSV(dem)
+
+dem_csv <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150.csv")
+head(dem_csv)
+
+
+#using a CSV input file - cropped to CO
+inputFile = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/30n120w_20101117_gmted_mea150_cropCO.tif"
+varList=c('MCMT') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm')
+outDir= 'C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/'
+test <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##this took ~ 4 minutes for state of CO, 1 climate var, 1 normal period
+
+pien_pts_normal_mcmt <- terra::extract(test, adjusted_provs, method="simple")
+
+bind_cols(data.frame(adjusted_provs), data.frame(crds(adjusted_provs)),pien_pts_normal_mcmt)
+
+
+
+```
+
+# DEM
+```{r}
+#get DEM from GMTED 
+
+dem_rast1 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W120_150/30n120w_20101117_gmted_mea150.tif")
+dem_rast2 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N50W120_150/50n120w_20101117_gmted_mea150.tif")
+dem_rast3 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N30W150_150/30n150w_20101117_gmted_mea150.tif")
+dem_rast4 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/GMTED2010N50W150_150/50n150w_20101117_gmted_mea150.tif")
+
+dem_west <- mosaic(dem_rast1, dem_rast2, dem_rast3, dem_rast4, fun="first")
+
+us <- geodata::gadm(country = "USA",  level = 1, resolution = 2,
+             path = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/PIENproject")
+
+
+ggplot()+
+  geom_spatraster(data=dem_west)+
+  geom_spatvector(data=us, fill=NA, color="black")
+```
+
+#Climate Match Fxn
+
+```{r}
+###make climate match function
+#make sure all time periods needed are included here
+
+climate_match <- function(prov_clim, plant_clim, mcmt_TL, shm_TL, plant_period){
+
+m=prov_clim %>% select(provenance_name)
+
+if(1140 %in% plant_period == TRUE){
+mcmt_MS_1140 <- (abs(prov_clim$Normal_1961_1990_MCMT - plant_clim$`8GCMs_ensemble_ssp245_2011-2040_MCMT`)/mcmt_TL)^2
+shm_MS_1140 <- (abs(prov_clim$Normal_1961_1990_SHM - plant_clim$`8GCMs_ensemble_ssp245_2011-2040_SHM`)/shm_TL)^2
+
+m_1140 <- data.frame(m_1140 = (-1*(sqrt(mcmt_MS_1140+shm_MS_1140)-1))*100) %>% 
+  bind_cols(prov_clim) %>% 
+  bind_cols(delta_mcmt_1140 =  plant_clim$`8GCMs_ensemble_ssp245_2011-2040_MCMT` - prov_clim$Normal_1961_1990_MCMT) %>% 
+  bind_cols(delta_shm_1140 = plant_clim$`8GCMs_ensemble_ssp245_2011-2040_SHM` - prov_clim$Normal_1961_1990_SHM)
+
+m = left_join(m, m_1140)
+}
+
+if(9120 %in% plant_period == TRUE){
+mcmt_MS_9120 <- (abs(prov_clim$Normal_1961_1990_MCMT - plant_clim$Normal_1991_2020_MCMT)/mcmt_TL)^2
+shm_MS_9120 <- (abs(prov_clim$Normal_1961_1990_SHM - plant_clim$Normal_1991_2020_SHM)/shm_TL)^2
+
+m_9120 <- data.frame(m_9120 = (-1*(sqrt(mcmt_MS_9120+shm_MS_9120)-1))*100) %>% 
+  bind_cols(prov_clim) %>% 
+  bind_cols(delta_mcmt_9120 =  plant_clim$Normal_1991_2020_MCMT - prov_clim$Normal_1961_1990_MCMT) %>% 
+  bind_cols(delta_shm_9120 = plant_clim$Normal_1991_2020_SHM - prov_clim$Normal_1961_1990_SHM)
+
+m = left_join(m, m_9120)
+}
+
+if(8110 %in% plant_period == TRUE){
+mcmt_MS_8110 <- (abs(prov_clim$Normal_1961_1990_MCMT - plant_clim$Normal_1981_2010_MCMT)/mcmt_TL)^2
+shm_MS_8110 <- (abs(prov_clim$Normal_1961_1990_SHM - plant_clim$Normal_1981_2010_SHM)/shm_TL)^2
+
+m_8110 <- data.frame( m_8110 = (-1*(sqrt(mcmt_MS_8110+shm_MS_8110)-1))*100) %>% 
+  bind_cols(prov_clim) %>% 
+  bind_cols(delta_mcmt_8110 =  plant_clim$Normal_1981_2010_MCMT - prov_clim$Normal_1961_1990_MCMT) %>% 
+  bind_cols(delta_shm_8110 = plant_clim$Normal_1981_2010_SHM - prov_clim$Normal_1961_1990_SHM)
+
+m=left_join(m, m_8110)
+}
+
+
+if(7100 %in% plant_period == TRUE){
+mcmt_MS_7100 <- (abs(prov_clim$Normal_1961_1990_MCMT - plant_clim$Normal_1971_2000_MCMT)/mcmt_TL)^2
+shm_MS_7100 <- (abs(prov_clim$Normal_1961_1990_SHM - plant_clim$Normal_1971_2000_SHM)/shm_TL)^2
+
+m_7100 <- data.frame( m_7100 = (-1*(sqrt(mcmt_MS_7100+shm_MS_7100)-1))*100) %>% 
+  bind_cols(prov_clim) %>% 
+  bind_cols(delta_mcmt_7100 =  plant_clim$Normal_1971_2000_MCMT - prov_clim$Normal_1961_1990_MCMT) %>% 
+  bind_cols(delta_shm_7100 = plant_clim$Normal_1971_2000_SHM - prov_clim$Normal_1961_1990_SHM)
+
+m=left_join(m, m_7100)
+}
+
+
+if(6190 %in% plant_period == TRUE){
+mcmt_MS_6190 <- (abs(prov_clim$Normal_1961_1990_MCMT - plant_clim$Normal_1961_1990_MCMT)/mcmt_TL)^2
+shm_MS_6190 <- (abs(prov_clim$Normal_1961_1990_SHM - plant_clim$Normal_1961_1990_SHM)/shm_TL)^2
+
+m_6190 <- data.frame( m_6190 = (-1*(sqrt(mcmt_MS_6190+shm_MS_6190)-1))*100) %>% 
+  bind_cols(prov_clim) %>% 
+  bind_cols(delta_mcmt_6190 =  plant_clim$Normal_1961_1990_MCMT - prov_clim$Normal_1961_1990_MCMT) %>% 
+  bind_cols(delta_shm_6190 = plant_clim$Normal_1961_1990_SHM - prov_clim$Normal_1961_1990_SHM)
+
+m=left_join(m, m_6190)
+}
+
+return(m)}
+```
+
+#Run SST for lodgepole pine data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for Kat's study, let's say this is 1991 - 2020
+
+##Study points
+
+```{r}
+pico_data <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/Lodgepole_data_KW.csv") %>% 
+  mutate(provenance_name=paste0(substr(provenance_name,0,2), provenance_elev_m))
+
+pico_all_vect <- bind_rows(
+  pico_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pico_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+writeVector(pico_all_vect, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/pico_all_vect.shp", overwrite=T)
+
+pico_plantation_vect <- pico_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pico_provs_vect <- pico_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pico_all_buffered <- buffer(pico_all_vect, width=4000)
+plot(pico_all_buffered)
+
+dem_pico_pts_crop <- crop(dem_west, pico_all_buffered)
+dem_pico_pts_mask <- mask(dem_pico_pts_crop, pico_all_buffered)
+
+plot(dem_pico_pts_mask)
+
+writeRaster(dem_pico_pts_mask, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/gmted_mea150_picocrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/gmted_mea150_picocrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','Normal_1991_2020.nrm')
+outDir= 'C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick'
+pico_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pico_tif_files <- list.files(
+  path = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/gmted_mea150_picocrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pico_climate_stack<- rast(pico_tif_files)
+names(pico_climate_stack)<- paste(str_match(pico_tif_files, ".*/(.*)/.*$")[, 2],str_match(pico_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+
+pico_plantation_clim <- terra::extract(pico_climate_stack, pico_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pico_plantation_vect)) %>% 
+  bind_cols(crds(pico_plantation_vect))
+pico_provenance_clim <- terra::extract(pico_climate_stack, pico_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pico_provs_vect)) %>% 
+  bind_cols(crds(pico_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores
+
+pico_mcmt_shm_scores<- climate_match(pico_provenance_clim,pico_plantation_clim,mcmt_TL=2, shm_TL=pico_plantation_clim$Normal_1961_1990_SHM/2, plant_period=c(6190,9120)) %>% 
+  select(provenance_name, m_6190, m_9120, everything())
+
+pico_mcmt_shm_scores_long <- pico_mcmt_shm_scores %>% 
+  pivot_longer(m_6190:m_9120, values_to = "m", names_to = "period") %>% 
+  mutate(years=substr(period, 3,6))
+
+pico_provs_by_lat <- pico_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pico_mcmt_shm_scores_long, aes(x=as.numeric(years), y=m, col=factor(provenance_name, levels=pico_provs_by_lat$provenance_name)))+
+  geom_point()+
+  geom_line()+
+  geom_hline(yintercept=0)
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pico_provs_forsst <- pico_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pico_provs_forsst, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/pico_provs_forsst.csv")
+
+write.csv(pico_mcmt_shm_scores, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PICO/warnick/pico_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+```{r}
+pico_ht_dbh<- pico_data %>% 
+  select(c(treeID, provenance_name, block, ht_cm, dbh_cm)) %>% 
+  unique() %>% 
+  left_join(pico_mcmt_shm_scores_long, by="provenance_name")
+
+ggplot(pico_ht_dbh)+
+  geom_boxplot(aes(x=provenance_name, y=ht_cm))
+
+ggplot(pico_ht_dbh)+
+  geom_point(aes(x=m, y=ht_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pico_ht_dbh %>% filter(m>0), aes(x=m, y=ht_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pico_ht_dbh)+
+  geom_point(aes(x=m, y=dbh_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("dbh (cm)")
+
+ggplot(pico_ht_dbh %>% filter(m>0), aes(x=m, y=dbh_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("height (m)")
+
+```
+
+#Run SST for Engelmann spruce data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for PIEN, we have height data for 1974, 1979, 1985, 1996, 2006, 2014 and DBH for 1991, 1996, 2006 and 2014
+    --> so we will want the 3 climate normal periods 1971-2000, 1981-2010 & 1991-2020
+
+##Study points
+
+```{r}
+pien_data <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/all_data_pien_forSST.csv")
+
+pien_all_vect <- bind_rows(
+  pien_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pien_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+#writeVector(pien_all_vect, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/pien_all_vect.shp")
+
+pien_plantation_vect <- pien_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pien_provs_vect <- pien_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pien_all_buffered <- buffer(pien_all_vect, width=4000)
+plot(pien_all_buffered)
+
+dem_pien_pts_crop <- crop(dem_west, pien_all_buffered)
+dem_pien_pts_mask <- mask(dem_pien_pts_crop, pien_all_buffered)
+
+plot(dem_pien_pts_mask)
+
+writeRaster(dem_pien_pts_mask, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/gmted_mea150_piencrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/gmted_mea150_piencrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','Normal_1971_2000.nrm','Normal_1981_2010.nrm','Normal_1991_2020.nrm')
+outDir= 'C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro'
+pien_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pien_tif_files <- list.files(
+  path = "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/gmted_mea150_piencrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pien_climate_stack<- rast(pien_tif_files)
+names(pien_climate_stack)<- paste(str_match(pien_tif_files, ".*/(.*)/.*$")[, 2],str_match(pien_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+
+pien_plantation_clim <- terra::extract(pien_climate_stack, pien_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pien_plantation_vect)) %>% 
+  bind_cols(crds(pien_plantation_vect))
+pien_provenance_clim <- terra::extract(pien_climate_stack, pien_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pien_provs_vect)) %>% 
+  bind_cols(crds(pien_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores
+
+pien_mcmt_shm_scores<- climate_match(pien_provenance_clim,pien_plantation_clim,mcmt_TL=2, shm_TL=pien_plantation_clim$Normal_1961_1990_SHM/2, plant_period=c(6190,7100,8110,9120)) %>% 
+  select(provenance_name, m_6190, m_7100, m_8110, m_9120, everything())
+
+pien_mcmt_shm_scores_long <- pien_mcmt_shm_scores %>% 
+  pivot_longer(m_6190:m_9120, values_to = "m", names_to = "period") %>% 
+  mutate(years=substr(period, 3,6))
+
+provs_by_lat <- pien_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pien_mcmt_shm_scores_long, aes(x=as.numeric(years), y=m, col=factor(provenance_name, levels=provs_by_lat$provenance_name)))+
+  geom_point()+
+  geom_line()+
+  scale_color_manual(values=unname(stepped()), name="Provenance")+
+  geom_hline(yintercept=0)
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pien_provs_forsst <- pien_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pien_provs_forsst, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/pien_provs_forsst.csv")
+
+write.csv(match_scores_mcmt_shm, "C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIEN/nigro/pien_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+```{r}
+pien_ht_dbh_2014<- pien_data %>% 
+  filter(is.na(raw_ring_width_mm) & years_since_planting==44) %>% 
+  select(c(treeID, provenance_name, block, ht_cm, dbh_cm)) %>% 
+  unique() %>% 
+  left_join(pien_mcmt_shm_scores, by="provenance_name")
+
+ggplot(pien_ht_dbh_2014)+
+  geom_boxplot(aes(x=provenance_name, y=ht_cm))
+
+ggplot(pien_ht_dbh_2014)+
+  geom_point(aes(x=m_9120, y=ht_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pien_ht_dbh_2014, aes(x=m_9120, y=ht_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pien_ht_dbh_2014)+
+  geom_point(aes(x=m_9120, y=dbh_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("dbh (cm)")
+
+ggplot(pien_ht_dbh_2014, aes(x=m_9120, y=dbh_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("dbh (cm)")
+
+```
+
+
+#Run SST for ponderosa pine Dixit data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for pipo, we have data for 2018-2025
+    --> so we will want the climate normal period 2011-2040 under SSP245 (this is what ClimateNA recommends to use for the current period)
+
+##Study points
+
+```{r}
+pipo_dixit_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/Dixit_pipo_dixit_survival.csv")
+
+head(pipo_dixit_data)
+
+pipo_dixit_all_vect <- bind_rows(
+  pipo_dixit_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pipo_dixit_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+#writeVector(pipo_dixit_all_vect, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/pipo_dixit_all_vect.shp")
+
+pipo_dixit_plantation_vect <- pipo_dixit_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pipo_dixit_provs_vect <- pipo_dixit_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pipo_dixit_all_buffered <- buffer(pipo_dixit_all_vect, width=4000)
+plot(pipo_dixit_all_buffered)
+
+dem_pipo_dixit_pts_crop <- crop(dem_west, pipo_dixit_all_buffered)
+dem_pipo_dixit_pts_mask <- mask(dem_pipo_dixit_pts_crop, pipo_dixit_all_buffered)
+
+plot(dem_pipo_dixit_pts_mask)
+
+writeRaster(dem_pipo_dixit_pts_mask, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/gmted_mea150_pipodixitcrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/gmted_mea150_pipodixitcrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','8GCMs_ensemble_ssp245_2011-2040.gcm')
+outDir= 'C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit'
+pipo_dixit_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pipo_dixit_tif_files <- list.files(
+  path = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/gmted_mea150_pipodixitcrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pipo_dixit_climate_stack<- rast(pipo_dixit_tif_files)
+names(pipo_dixit_climate_stack)<- paste(str_match(pipo_dixit_tif_files, ".*/(.*)/.*$")[, 2],str_match(pipo_dixit_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+
+pipo_dixit_plantation_clim <- terra::extract(pipo_dixit_climate_stack, pipo_dixit_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_dixit_plantation_vect)) %>% 
+  bind_cols(crds(pipo_dixit_plantation_vect))
+pipo_dixit_provenance_clim <- terra::extract(pipo_dixit_climate_stack, pipo_dixit_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_dixit_provs_vect)) %>% 
+  bind_cols(crds(pipo_dixit_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores
+
+pipo_dixit_mcmt_shm_scores<- climate_match(pipo_dixit_provenance_clim,pipo_dixit_plantation_clim,mcmt_TL=2, shm_TL=40.3, plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+pipo_dixit_mcmt_shm_scores_long <- pipo_dixit_mcmt_shm_scores %>% 
+  pivot_longer(m_6190:m_1140, values_to = "m", names_to = "period") %>% 
+  mutate(years=substr(period, 3,6))
+
+provs_by_lat <- pipo_dixit_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pipo_dixit_mcmt_shm_scores_long, aes(x=factor(years, levels=c("6190","1140")), y=m, col=factor(provenance_name, levels=provs_by_lat$provenance_name)))+
+  geom_point()+
+  geom_line(aes(group=provenance_name))+
+  scale_color_manual(values=unname(stepped()), name="Provenance")+
+  geom_hline(yintercept=0)
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pipo_dixit_provs_forsst <- pipo_dixit_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pipo_dixit_provs_forsst, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/pipo_dixit_provs_forsst.csv")
+
+write.csv(pipo_dixit_mcmt_shm_scores, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/dixit/pipo_dixit_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+```{r}
+pipo_dixit_surv<- pipo_dixit_data %>% 
+  left_join(pipo_dixit_mcmt_shm_scores, by="provenance_name")
+
+pipo_dixit_surv_sum<- pipo_dixit_surv %>% 
+  group_by(provenance_name, years_since_planting, m_6190, m_1140) %>% 
+  summarise(n=n(), status_sum=sum(status)) %>% #all have 48 trees to start
+  mutate(surv.prop.from.start = status_sum/n)
+  
+ggplot(pipo_dixit_surv_sum, aes(x=m_1140, y=surv.prop.from.start))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  facet_wrap(~years_since_planting)
+```
+
+
+#Run SST for ponderosa pine Nigro data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for pipo, we have data for 2021-2025
+    --> so we will want the climate normal period 2011-2040 under SSP245 (this is what ClimateNA recommends to use for the current period)
+
+##Study points
+
+```{r}
+pipo_nigro_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/planted_COpondo_forSST.csv") %>% 
+  filter(!planting_site_name=="ML") ##removing ML since it had very different canopy conditions
+
+head(pipo_nigro_data)
+
+pipo_nigro_all_vect <- bind_rows(
+  pipo_nigro_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pipo_nigro_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+#writeVector(pipo_nigro_all_vect, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/pipo_nigro_all_vect.shp")
+
+pipo_nigro_plantation_vect <- pipo_nigro_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pipo_nigro_provs_vect <- pipo_nigro_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pipo_nigro_all_buffered <- buffer(pipo_nigro_all_vect, width=4000)
+plot(pipo_nigro_all_buffered)
+
+dem_pipo_nigro_pts_crop <- crop(dem_west, pipo_nigro_all_buffered)
+dem_pipo_nigro_pts_mask <- mask(dem_pipo_nigro_pts_crop, pipo_nigro_all_buffered)
+
+plot(dem_pipo_nigro_pts_mask)
+
+writeRaster(dem_pipo_nigro_pts_mask, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/gmted_mea150_piponigrocrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/gmted_mea150_piponigrocrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','8GCMs_ensemble_ssp245_2011-2040.gcm')
+outDir= 'C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro'
+pipo_nigro_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pipo_nigro_tif_files <- list.files(
+  path = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/gmted_mea150_piponigrocrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pipo_nigro_climate_stack<- rast(pipo_nigro_tif_files)
+names(pipo_nigro_climate_stack)<- paste(str_match(pipo_nigro_tif_files, ".*/(.*)/.*$")[, 2],str_match(pipo_nigro_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+pipo_nigro_plantation_clim <- terra::extract(pipo_nigro_climate_stack, pipo_nigro_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_nigro_plantation_vect)) %>% 
+  bind_cols(crds(pipo_nigro_plantation_vect))
+pipo_nigro_provenance_clim <- terra::extract(pipo_nigro_climate_stack, pipo_nigro_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_nigro_provs_vect)) %>% 
+  bind_cols(crds(pipo_nigro_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores
+
+pipo_nigro_mcmt_shm_scores_HH<- climate_match(pipo_nigro_provenance_clim,pipo_nigro_plantation_clim %>% filter(planting_site_name=="HH"),mcmt_TL=2, shm_TL = pipo_nigro_plantation_clim %>% filter(planting_site_name=="HH") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+pipo_nigro_mcmt_shm_scores_MH<- climate_match(pipo_nigro_provenance_clim,pipo_nigro_plantation_clim %>% filter(planting_site_name=="MH"),mcmt_TL=2, shm_TL=pipo_nigro_plantation_clim %>% filter(planting_site_name=="MH") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+###HH
+pipo_nigro_mcmt_shm_scores_HH_long <- pipo_nigro_mcmt_shm_scores_HH %>% 
+  pivot_longer(m_1140, values_to = "m", names_to = "period") %>% 
+  mutate(years=substr(period, 3,6))
+
+###MH
+pipo_nigro_mcmt_shm_scores_MH_long <- pipo_nigro_mcmt_shm_scores_MH %>% 
+  pivot_longer(m_1140, values_to = "m", names_to = "period") %>% 
+  mutate(years=substr(period, 3,6))
+
+pipo_nigro_provs_by_lat <- pipo_nigro_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pipo_nigro_mcmt_shm_scores_HH_long, aes(x=factor(provenance_name, levels=pipo_nigro_provs_by_lat$provenance_name), y=m, fill=factor(provenance_name, levels=pipo_nigro_provs_by_lat$provenance_name)))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept=0)
+
+ggplot(pipo_nigro_mcmt_shm_scores_MH_long, aes(x=factor(provenance_name, levels=pipo_nigro_provs_by_lat$provenance_name), y=m, fill=factor(provenance_name, levels=pipo_nigro_provs_by_lat$provenance_name)))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept=0)
+
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pipo_nigro_provs_forsst <- pipo_nigro_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pipo_nigro_provs_forsst, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/pipo_nigro_provs_forsst.csv")
+
+#write.csv(pipo_nigro_mcmt_shm_scores, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/pipo_nigro_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+###MH
+```{r}
+pipo_nigro_ht_gld_yr4<- pipo_nigro_data %>% 
+  filter(years_since_planting==4 & planting_site_name=="MH") %>% 
+  select(c(treeID, provenance_name, block, ht_cm, gld_cm)) %>% 
+  unique() %>% 
+  left_join(pipo_nigro_mcmt_shm_scores_MH, by="provenance_name")
+
+ggplot(pipo_nigro_ht_gld_yr4)+
+  geom_boxplot(aes(x=provenance_name, y=ht_cm))
+
+ggplot(pipo_nigro_ht_gld_yr4)+
+  geom_point(aes(x=m_1140, y=ht_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pipo_nigro_ht_gld_yr4, aes(x=m_1140, y=ht_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("height (m)")
+
+ggplot(pipo_nigro_ht_gld_yr4)+
+  geom_point(aes(x=m_1140, y=gld_cm, color=provenance_name), size=3)+
+  xlab("match score")+
+  ylab("gld (cm)")
+
+ggplot(pipo_nigro_ht_gld_yr4, aes(x=m_1140, y=gld_cm))+
+  geom_point(size=3)+
+  geom_smooth(method="lm")+
+  xlab("match score")+
+  ylab("gld (cm)")
+
+
+pipo_nigro_data_init_4yr_ht<- pipo_nigro_data %>% filter(years_since_planting%in%c("initial","4") & planting_site_name=="MH") %>% 
+  select(c(treeID, provenance_name, planting_site_name, years_since_planting, ht_cm)) %>% 
+  pivot_wider(names_from = years_since_planting, values_from = ht_cm)
+
+ggplot(pipo_nigro_data_init_4yr_ht, aes(x=initial, y=`4`))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+```
+
+
+#Run SST for pinyon pine Redmond data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for pied, we have data from 2020s
+    --> so we will want the climate normal period 2011-2040 under SSP245 (this is what ClimateNA recommends to use for the current period)
+
+##Study points
+
+```{r}
+pied_redmond_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/PUR_germdat_NigroSST_EMH_Aug2026.csv")
+
+head(pied_redmond_data)
+
+pied_redmond_all_vect <- bind_rows(
+  pied_redmond_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pied_redmond_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  mutate(provenance_name=substr(provenance_name, 0,3)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+#writeVector(pied_redmond_all_vect, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/pied_redmond_all_vect.shp", overwrite=TRUE)
+
+pied_redmond_plantation_vect <- pied_redmond_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pied_redmond_provs_vect <- pied_redmond_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+    mutate(provenance_name=substr(provenance_name, 0,3)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pied_redmond_all_buffered <- buffer(pied_redmond_all_vect, width=4000)
+plot(pied_redmond_all_buffered)
+
+dem_pied_redmond_pts_crop <- crop(dem_west, pied_redmond_all_buffered)
+dem_pied_redmond_pts_mask <- mask(dem_pied_redmond_pts_crop, pied_redmond_all_buffered)
+
+plot(dem_pied_redmond_pts_mask)
+
+writeRaster(dem_pied_redmond_pts_mask, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/gmted_mea150_piedredmondcrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/gmted_mea150_piedredmondcrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','8GCMs_ensemble_ssp245_2011-2040.gcm')
+outDir= 'C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond'
+pied_redmond_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pied_redmond_tif_files <- list.files(
+  path = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/gmted_mea150_piedredmondcrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pied_redmond_climate_stack<- rast(pied_redmond_tif_files)
+names(pied_redmond_climate_stack)<- paste(str_match(pied_redmond_tif_files, ".*/(.*)/.*$")[, 2],str_match(pied_redmond_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+pied_redmond_plantation_clim <- terra::extract(pied_redmond_climate_stack, pied_redmond_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pied_redmond_plantation_vect)) %>% 
+  bind_cols(crds(pied_redmond_plantation_vect))
+pied_redmond_provenance_clim <- terra::extract(pied_redmond_climate_stack, pied_redmond_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pied_redmond_provs_vect)) %>% 
+  bind_cols(crds(pied_redmond_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores for each planting site
+
+#NW
+pied_redmond_mcmt_shm_scores_NWL<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="NWL"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="NWL") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+pied_redmond_mcmt_shm_scores_NWM<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="NWM"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="NWM") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+#SW
+pied_redmond_mcmt_shm_scores_SWL<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="SWL"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="SWL") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+pied_redmond_mcmt_shm_scores_SWM<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="SWM"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="SWM") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+pied_redmond_mcmt_shm_scores_SWH<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="SWH"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="SWH") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+#AZ
+pied_redmond_mcmt_shm_scores_AZL<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="AZL"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="AZL") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+pied_redmond_mcmt_shm_scores_AZM<- climate_match(pied_redmond_provenance_clim,pied_redmond_plantation_clim %>% filter(planting_site_name=="AZM"),mcmt_TL=2, shm_TL=pied_redmond_plantation_clim %>% filter(planting_site_name=="AZM") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+```
+
+
+```{r}
+
+pied_redmond_mcmt_shm_scores_long <- rbind(
+#NW
+pied_redmond_mcmt_shm_scores_NWL %>% mutate(planting_site_name="NWL"),
+pied_redmond_mcmt_shm_scores_NWM %>% mutate(planting_site_name="NWM"),
+#SW
+pied_redmond_mcmt_shm_scores_SWL %>% mutate(planting_site_name="SWL"),
+pied_redmond_mcmt_shm_scores_SWM %>% mutate(planting_site_name="SWM"),
+pied_redmond_mcmt_shm_scores_SWH %>% mutate(planting_site_name="SWH"),
+#AZ
+pied_redmond_mcmt_shm_scores_AZL %>% mutate(planting_site_name="AZL"),
+pied_redmond_mcmt_shm_scores_AZM %>% mutate(planting_site_name="AZM")
+) %>% 
+  pivot_longer(m_1140, names_to="years", values_to = "m")
+
+pied_redmond_provs_by_lat <- pied_redmond_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  mutate(provenance_name=substr(provenance_name, 0,3)) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pied_redmond_mcmt_shm_scores_long, aes(x=factor(provenance_name, levels=pied_redmond_provs_by_lat$provenance_name), y=m, fill=factor(provenance_name, levels=pied_redmond_provs_by_lat$provenance_name)))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept=0)+
+  scale_fill_manual(values=seq(1,5,1), name="Provenance")+
+  facet_wrap(~planting_site_name)+
+  xlab("")
+
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pied_redmond_provs_forsst <- pied_redmond_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pied_redmond_provs_forsst, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/pied_redmond_provs_forsst.csv")
+
+#write.csv(pied_redmond_mcmt_shm_scores, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/pied_redmond_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+```{r}
+pied_redmond_surv <- pied_redmond_data %>% 
+  mutate(provenance_name=substr(provenance_name, 0,3)) %>% 
+  group_by(provenance_name, planting_site_name, years_since_planting) %>% 
+    summarise(n_surv=sum(number_surviving), n_tot=n()) %>% 
+  mutate(surv.prop = n_surv/n_tot) %>% 
+  left_join(pied_redmond_mcmt_shm_scores_long)
+
+ggplot(data=pied_redmond_surv, aes(x=provenance_name, y=surv.prop))+
+  geom_bar(stat="identity")+
+  facet_wrap(~planting_site_name)
+
+ggplot(data=pied_redmond_surv %>% filter(years_since_planting==2), aes(x=m, y=surv.prop))+
+  geom_point()+
+  facet_wrap(~planting_site_name)
+
+
+```
+
+
+#Run SST for pinyon pine Urza data
+
+To run SST, we need 
+1) Normal 1961 - 1990 ClimateNA data for each seedlot
+2) Desired future projection time period and emissions scenario for the planting site 
+    --> for pimo, we have data from 2020s
+    --> so we will want the climate normal period 2011-2040 under SSP245 (this is what ClimateNA recommends to use for the current period)
+
+##Study points
+
+```{r}
+pimo_urza_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/Urza_P.monophylla_data_forSST_seedlingdata.csv")
+
+head(pimo_urza_data)
+
+pimo_urza_all_vect <- bind_rows(
+  pimo_urza_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  rename(lat = planting_site_lat, lon = planting_site_lon, name=planting_site_name) %>% 
+  mutate(site_type = "planting site")
+,
+pimo_urza_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
+  mutate(site_type="provenance")) %>% 
+  filter(!is.na(lat)) %>% 
+  vect(geom=c("lon","lat"), crs=crs(us))
+
+#writeVector(pimo_urza_all_vect, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/pimo_urza_all_vect.shp", overwrite=TRUE)
+
+pimo_urza_plantation_vect <- pimo_urza_data %>% 
+  select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(planting_site_lat)) %>% 
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+
+pimo_urza_provs_vect <- pimo_urza_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+
+```
+
+##buffer points and crop dem
+
+```{r}
+pimo_urza_all_buffered <- buffer(pimo_urza_all_vect, width=4000)
+plot(pimo_urza_all_buffered)
+
+dem_pimo_urza_pts_crop <- crop(dem_west, pimo_urza_all_buffered)
+dem_pimo_urza_pts_mask <- mask(dem_pimo_urza_pts_crop, pimo_urza_all_buffered)
+
+plot(dem_pimo_urza_pts_mask)
+
+writeRaster(dem_pimo_urza_pts_mask, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/gmted_mea150_pimourzacrop_bufferedpts.tif", overwrite=TRUE)
+
+##get climatena data
+inputFile = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/gmted_mea150_pimourzacrop_bufferedpts.tif"
+varList=c('MCMT','SHM') # or varList='YS'
+periodList=
+c('Normal_1961_1990.nrm','8GCMs_ensemble_ssp245_2011-2040.gcm')
+outDir= 'C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza'
+pimo_urza_climatena <- ClimateNAr::ClimateNAr(inputFile,periodList,varList,outDir) ##YES! This is the way; <30sec.
+
+```
+
+##extract climate from points
+
+```{r}
+##get all TIF files
+
+pimo_urza_tif_files <- list.files(
+  path = "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/gmted_mea150_pimourzacrop_bufferedpts", 
+  pattern = "\\.tif$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+pimo_urza_climate_stack<- rast(pimo_urza_tif_files)
+names(pimo_urza_climate_stack)<- paste(str_match(pimo_urza_tif_files, ".*/(.*)/.*$")[, 2],str_match(pimo_urza_tif_files, "/([^/]+)\\.tif$")[,2],sep="_")
+
+pimo_urza_plantation_clim <- terra::extract(pimo_urza_climate_stack, pimo_urza_plantation_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pimo_urza_plantation_vect)) %>% 
+  bind_cols(crds(pimo_urza_plantation_vect))
+pimo_urza_provenance_clim <- terra::extract(pimo_urza_climate_stack, pimo_urza_provs_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pimo_urza_provs_vect)) %>% 
+  bind_cols(crds(pimo_urza_provs_vect)) 
+
+```
+
+##calculate match scores
+
+```{r}
+##get match scores for each planting site
+
+#PUD-H
+pimo_urza_mcmt_shm_scores_PUDH<- climate_match(pimo_urza_provenance_clim,pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD-H"),mcmt_TL=2, shm_TL=pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD-H") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+#PUD-L
+pimo_urza_mcmt_shm_scores_PUDL<- climate_match(pimo_urza_provenance_clim,pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD-L"),mcmt_TL=2, shm_TL=pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD-L") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+#PUD_PL
+pimo_urza_mcmt_shm_scores_PUDPL<- climate_match(pimo_urza_provenance_clim,pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD_PL"),mcmt_TL=2, shm_TL=pimo_urza_plantation_clim %>% filter(planting_site_name=="PUD_PL") %>% pull(Normal_1961_1990_SHM)/2, plant_period=c(1140)) %>% 
+  select(provenance_name, m_1140, everything())
+
+```
+
+
+```{r}
+
+pimo_urza_mcmt_shm_scores_long <- rbind(
+pimo_urza_mcmt_shm_scores_PUDH %>% mutate(planting_site_name="PUD-H"),
+pimo_urza_mcmt_shm_scores_PUDL %>% mutate(planting_site_name="PUD-L"),
+pimo_urza_mcmt_shm_scores_PUDPL %>% mutate(planting_site_name="PUD_PL")
+) %>% 
+  pivot_longer(m_1140, names_to="years", values_to = "m")
+
+pimo_urza_provs_by_lat <- pimo_urza_data %>% 
+  select(provenance_name, provenance_lat) %>% 
+  filter(!is.na(provenance_lat)) %>% 
+  unique() %>% 
+  arrange(provenance_lat)
+
+ggplot(pimo_urza_mcmt_shm_scores_long, aes(x=factor(provenance_name, levels=pimo_urza_provs_by_lat$provenance_name), y=m, fill=factor(provenance_name, levels=pimo_urza_provs_by_lat$provenance_name)))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept=0)+
+  scale_fill_manual(values=c("#a9b836","#7562cd","#62be4a","#c454ba","#4e8c37","#d34782","#62c185","#cf4148","#41c0c7","#d1592a","#608acd","#dc9c36","#b47aba","#8f882d","#b35a6d","#388661","#e48c70","#696e2e","#9d622e","#beb16b"), name="Provenance")+
+  facet_wrap(~planting_site_name)+
+  xlab("")
+
+```
+
+```{r, eval=FALSE}
+###test in the online seedlot selection tool
+
+pimo_urza_provs_forsst <- pimo_urza_data %>% 
+  select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
+  unique() %>% 
+  rename(Name = provenance_name, y=provenance_lat, x=provenance_lon)
+
+write.csv(pimo_urza_provs_forsst, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/pimo_urza_provs_forsst.csv")
+
+#write.csv(pimo_urza_mcmt_shm_scores, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/pimo_urza_calculated_scores_mcmt_shm.csv")
+```
+
+##visualizing data
+
+```{r}
+pimo_urza_surv <- pimo_urza_data %>% 
+  filter(!is.na(status)) %>%  ##gets rid of seedlings that were not surveyed
+  group_by(provenance_name, planting_site_name, years_since_planting) %>% 
+    summarise(n_surv=sum(status), n_tot=n()) %>% 
+  mutate(surv.prop = n_surv/n_tot) %>% 
+  left_join(pimo_urza_mcmt_shm_scores_long)
+
+ggplot(data=pimo_urza_surv, aes(x=provenance_name, y=surv.prop, fill=provenance_name))+
+  geom_bar(stat="identity", position = "dodge")+
+  facet_grid(years_since_planting~planting_site_name)
+
+ggplot(data=pimo_urza_surv %>% filter(years_since_planting>4), aes(x=m, y=surv.prop))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  facet_wrap(~planting_site_name)
+
+pimo_urza_comb<- pimo_urza_data %>% 
+  left_join(pimo_urza_mcmt_shm_scores_long)
+
+ggplot(pimo_urza_comb %>% filter(!is.na(height_cm)), aes(x=m, y=height_cm))+
+  geom_point()+
+  facet_grid(years_since_planting~planting_site_name)+
+  geom_vline(xintercept=0, color="red")
+```
+
+
+
+#Try AdaptWest data download
+
+```{r, eval=FALSE}
+
+normal6190_mcmt <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/Normal_1961_1990_bioclim/Normal_1961_1990_MCMT.tif")
+
+normal6190_shm <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/Normal_1961_1990_bioclim/Normal_1961_1990_SHM.tif")
+
+normal9120_mcmt <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/Normal_1991_2020_bioclim/Normal_1991_2020_MCMT.tif")
+
+normal9120_shm <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/Normal_1991_2020_bioclim/Normal_1991_2020_SHM.tif")
+
+future1140_mcmt <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/ensemble_8GCMs_ssp245_2011_2040_bioclim/ensemble_8GCMs_ssp245_2011_2040_MCMT.tif")
+
+future1140_shm <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/SST_validation/ensemble_8GCMs_ssp245_2011_2040_bioclim/ensemble_8GCMs_ssp245_2011_2040_SHM.tif")
+
+AW_clim_stack<- c(normal6190_mcmt,normal6190_shm, normal9120_mcmt, normal9120_shm, future1140_mcmt, future1140_shm)
+names(AW_clim_stack)<-  c("Normal_1961_1990_MCMT","Normal_1961_1990_SHM", "Normal_1991_2020_MCMT", "Normal_1991_2020_SHM", "8GCMs_ensemble_ssp245_2011-2040_MCMT", "8GCMs_ensemble_ssp245_2011-2040_SHM")
+```
+
+##pico
+```{r}
+AW_clim_pico <- terra::extract(AW_clim_stack, pico_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pico_all_vect)) %>% 
+  bind_cols(crds(pico_all_vect)) 
+
+AW_clim_pico_plantation<- AW_clim_pico %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pico_provs<- AW_clim_pico %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+AW_pico_scores_mcmt_shm <- climate_match(AW_clim_pico_provs, 
+                                         AW_clim_pico_plantation, 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pico_plantation$Normal_1961_1990_SHM/2,
+                                         plant_period=c(6190,9120)) %>% 
+  select(provenance_name, m_6190, m_9120, everything())
+```
+
+
+##pien
+```{r}
+AW_clim_pien <- terra::extract(AW_clim_stack, pien_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pien_all_vect)) %>% 
+  bind_cols(crds(pien_all_vect)) 
+
+AW_clim_pien_plantation<- AW_clim_pien %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pien_provs<- AW_clim_pien %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+AW_pien_scores_mcmt_shm <- climate_match(AW_clim_pien_provs, 
+                                         AW_clim_pien_plantation, 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pien_plantation$Normal_1961_1990_SHM/2,
+                                         plant_period=c(6190,9120)) %>% 
+  select(provenance_name, m_6190, m_9120, everything())
+```
+
+
+##pipo_dixit
+```{r}
+AW_clim_pipo_dixit <- terra::extract(AW_clim_stack, pipo_dixit_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_dixit_all_vect)) %>% 
+  bind_cols(crds(pipo_dixit_all_vect)) 
+
+AW_clim_pipo_dixit_plantation<- AW_clim_pipo_dixit %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pipo_dixit_provs<- AW_clim_pipo_dixit %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+AW_pipo_dixit_scores_mcmt_shm <- climate_match(AW_clim_pipo_dixit_provs, 
+                                         AW_clim_pipo_dixit_plantation, 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pipo_dixit_plantation$Normal_1961_1990_SHM/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+```
+
+##pipo_nigro
+```{r}
+AW_clim_pipo_nigro <- terra::extract(AW_clim_stack, pipo_nigro_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pipo_nigro_all_vect)) %>% 
+  bind_cols(crds(pipo_nigro_all_vect)) 
+
+AW_clim_pipo_nigro_plantation<- AW_clim_pipo_nigro %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pipo_nigro_provs<- AW_clim_pipo_nigro %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+AW_pipo_nigro_scores_mcmt_shm_MH <- climate_match(AW_clim_pipo_nigro_provs, 
+                                         AW_clim_pipo_nigro_plantation %>% filter(planting_site_name=="MH"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pipo_nigro_plantation %>% filter(planting_site_name=="MH") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pipo_nigro_scores_mcmt_shm_HH <- climate_match(AW_clim_pipo_nigro_provs, 
+                                         AW_clim_pipo_nigro_plantation%>% filter(planting_site_name=="HH"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pipo_nigro_plantation %>% filter(planting_site_name=="HH") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+```
+
+##pied
+
+```{r}
+AW_clim_pied_redmond <- terra::extract(AW_clim_stack, pied_redmond_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pied_redmond_all_vect)) %>% 
+  bind_cols(crds(pied_redmond_all_vect)) 
+
+AW_clim_pied_redmond_plantation<- AW_clim_pied_redmond %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pied_redmond_provs<- AW_clim_pied_redmond %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+unique(AW_clim_pied_redmond_plantation$planting_site_name)
+
+AW_pied_redmond_scores_mcmt_shm_NWM <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="NWM"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="NWM") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_NWL <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="NWL"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="NWL") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_SWH <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="SWH"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="SWH") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_SWM <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="SWM"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="SWM") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_SWL <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="SWL"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="SWL") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_AZM <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="AZM"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="AZM") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pied_redmond_scores_mcmt_shm_AZL <- climate_match(AW_clim_pied_redmond_provs, 
+                                         AW_clim_pied_redmond_plantation%>% filter(planting_site_name=="AZL"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pied_redmond_plantation %>% filter(planting_site_name=="AZL") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+```
+
+##pimo
+
+```{r}
+AW_clim_pimo_urza <- terra::extract(AW_clim_stack, pimo_urza_all_vect, method="simple") %>% 
+  bind_cols(as.data.frame(pimo_urza_all_vect)) %>% 
+  bind_cols(crds(pimo_urza_all_vect)) 
+
+AW_clim_pimo_urza_plantation<- AW_clim_pimo_urza %>% 
+  filter(site_type=="planting site") %>% 
+  rename(planting_site_name=name)
+AW_clim_pimo_urza_provs<- AW_clim_pimo_urza %>% 
+  filter(site_type=="provenance") %>% 
+  rename(provenance_name = name)
+
+unique(AW_clim_pimo_urza_plantation$planting_site_name)
+
+AW_pimo_urza_scores_mcmt_shm_PUDH <- climate_match(AW_clim_pimo_urza_provs, 
+                                         AW_clim_pimo_urza_plantation %>% filter(planting_site_name=="PUD-H"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pimo_urza_plantation %>% filter(planting_site_name=="PUD-H") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pimo_urza_scores_mcmt_shm_PUDL <- climate_match(AW_clim_pimo_urza_provs, 
+                                         AW_clim_pimo_urza_plantation%>% filter(planting_site_name=="PUD-L"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pimo_urza_plantation %>% filter(planting_site_name=="PUD-L") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+
+AW_pimo_urza_scores_mcmt_shm_PUD_PL <- climate_match(AW_clim_pimo_urza_provs, 
+                                         AW_clim_pimo_urza_plantation%>% filter(planting_site_name=="PUD_PL"), 
+                                         mcmt_TL=2,
+                                         shm_TL = AW_clim_pimo_urza_plantation %>% filter(planting_site_name=="PUD_PL") %>% pull(Normal_1961_1990_SHM)/2,
+                                         plant_period=c(6190,1140)) %>% 
+  select(provenance_name, m_6190, m_1140, everything())
+```
+
+#Tool Results
+
+```{r}
+##read in results downloaded from tool runs online
+
+
+```
+
+#Compare match scores
+Compare match scores obtained from the 3 methods (ClimateNAr, AdaptWest data download, online webtool)
+
+```{r}
+
+
+```
+
+
+
