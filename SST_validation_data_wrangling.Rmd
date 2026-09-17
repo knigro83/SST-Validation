@@ -12,7 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-
+library(tidyverse)
+library(terra)
 ```
 
 ```{r}
@@ -45,13 +46,17 @@ pipo_dixit_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Wor
   mutate(treeID = as.character(treeID))
 pipo_nigro_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/planted_COpondo_forSST.csv") %>% 
   filter(!planting_site_name=="ML") %>%  ##removing ML since it had very different canopy conditions
+  filter(!ht_cm>900) %>% #gets rid of outlier
   mutate(years_since_planting = as.numeric(ifelse(years_since_planting == "initial", 0, years_since_planting)))
 pied_redmond_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIED/redmond/PUR_germdat_NigroSST_EMH_Aug2026.csv") %>% 
   mutate(provenance_name=substr(provenance_name, 0,3))
 pimo_urza_data <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIMO/urza/Urza_P.monophylla_data_forSST_seedlingdata.csv") %>% 
   mutate(block=as.character(block), treeID=as.character(treeID), month.of.planting=as.character(month.of.planting), month.of.measurement=as.character(month.of.measurement))
 
-all_data <- bind_rows(pico_data, pien_data, pipo_dixit_data, pipo_nigro_data, pied_redmond_data, pimo_urza_data) %>% 
+pipo_nigro_sowed <- read.csv("C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/sowed_COpondo_forSST.csv") %>% 
+  filter(!planting_site_name=="ML")
+
+all_data <- bind_rows(pico_data, pien_data, pipo_dixit_data, pipo_nigro_data, pied_redmond_data, pimo_urza_data,pipo_nigro_sowed) %>% 
   select(species, planting_site_name, planting_site_lat, planting_site_lon, planting_site_elev_m, provenance_name,provenance_lat, provenance_lon, provenance_elev_m) %>% 
   unique()
 ```
@@ -62,3 +67,62 @@ all_data <- bind_rows(pico_data, pien_data, pipo_dixit_data, pipo_nigro_data, pi
 all_match_scores_mcmt_shm<- getmatchscores(data=all_data, varList=c("MCMT","SHM"), refperiod="Normal_1961_1990.nrm", targetperiod= c("Normal_1991_2020.nrm", "8GCMs_ensemble_ssp245_2011-2040.gcm"), mcmt_TL=2) ##this took ~1 min
 
 ```
+
+
+```{r}
+all_measurements <- bind_rows(pico_data %>% mutate(study="Warnick"), pien_data %>% mutate(study="Nigro_pien"), pipo_dixit_data %>% mutate(study="Dixit"), pipo_nigro_data %>% mutate(study="Nigro_pipo"), pied_redmond_data %>% mutate(study="Hill"), pimo_urza_data %>% mutate(study="Urza"), pipo_nigro_sowed %>% mutate(study="Nigro_pipo_sowed")) %>% 
+  mutate(ht_cm=coalesce(ht_cm, height_cm, ave_height),
+         cone_presence = coalesce(cone_presence, cone.presence),
+         raw_ring_width_mm = coalesce(raw_ring_width_mm, raw.ring.width..mm.),
+         measurement_year = coalesce(year, year.of.measurement),
+         survival = coalesce(status, number_surviving)) %>% 
+  select(-c(height_cm, cone.presence, raw.ring.width..mm.,X,X.N, year.of.measurement, year, ave_height, status, number_surviving))
+
+colnames(all_measurements)  
+
+study_summary<- all_measurements %>% 
+  group_by(study, species, planting_site_name) %>% 
+  summarise(n_trees = length(unique(treeID)),
+            n_blocks = length(unique(block)),
+            n_provs = length(unique(provenance_name)),
+            n_years = length(unique(years_since_planting)),
+            ave_ht_cm = mean(ht_cm, na.rm=T),
+            ave_dbh_cm = mean(dbh_cm, na.rm=T),
+            ave_gld_cm = mean(gld_cm, na.rm=T),
+            surv = mean(survival, na.rm=T),
+            min_yr = min(measurement_year),
+            max_yr = max(measurement_year),
+            ave_rwi = mean(raw_ring_width_mm, na.rm=T))
+
+study_summary
+
+write.csv(study_summary, "study_summary.csv")
+```
+
+```{r}
+all_measurements_w_match <- all_measurements %>% 
+  left_join(all_match_scores_mcmt_shm)
+
+
+all_measurements_w_match_survival <- all_measurements_w_match %>% 
+  group_by(study, species, provenance_name, planting_site_name, years_since_planting) %>% 
+  summarise(n_surv = sum(survival), n=n()) %>% 
+  mutate(prop.surv=n_surv/n) %>% 
+  left_join(all_match_scores_mcmt_shm)
+
+ggplot(data=all_measurements_w_match_survival %>% filter(!(study%in%c("Nigro_pipo_sowed","Hill")) & !is.na(years_since_planting)), aes(x=m_1140_245, y=prop.surv, color=factor(years_since_planting)))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  facet_wrap(~planting_site_name, scales="free")+
+  scale_color_viridis_d(option="viridis", direction=-1)
+
+
+ggplot(data=all_measurements_w_match %>% filter(!is.na(ht_cm)), aes(x=m_1140_245, y=ht_cm, col=factor(years_since_planting)))+
+  geom_point()+
+  geom_smooth(method="lm")+
+  facet_wrap(~planting_site_name, scales="free")+
+  scale_color_viridis_d(option="viridis", direction=-1)
+
+```
+
+
