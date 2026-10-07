@@ -27,16 +27,17 @@
 
 
 #need to have these before running function:
-# dem_west & us already in environment 
+# dem_west -- a DEM that covers all points in analysis, must be in lat-long projection (WGS84) like EPSG:4326
 # data
 # varList -- a list (c()) of climate vars that you want to use to calculate match; e.g., c("MCMT","SHM")
 # refperiod -- the reference climate period (e.g., "Normal_1961_1990.nrm")
 # targetperiod -- the target periods you want to calculate match for. Must be a list (e.g., c(('Normal_1961_1990.nrm','8GCMs_ensemble_ssp245_2011-2040.gcm')))
-# 
+# climate_match() function sourced. Do this now: 
+source("climate_match_fxn.R")
 
 ## 1. make provenances and planting sites into spatial point data (spat_vector)
 
-getmatchscores<- function(data, varList, refperiod, targetperiod, mcmt_TL){
+getmatchscores<- function(data, varList, refperiod, targetperiod, mcmt_TL, dem_west){
 all_vect <- bind_rows(
   data %>% 
     select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
@@ -50,7 +51,7 @@ all_vect <- bind_rows(
     rename(lat = provenance_lat, lon = provenance_lon, name=provenance_name) %>% 
     mutate(site_type="provenance")) %>% 
   filter(!is.na(lat)) %>% 
-  vect(geom=c("lon","lat"), crs=crs(us))
+  vect(geom=c("lon","lat"), crs="EPSG:4326")
 
 #writeVector(pipo_nigro_all_vect, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/PIPO/nigro/pipo_nigro_all_vect.shp")
 
@@ -58,21 +59,21 @@ plantation_vect <- data %>%
   select(c(planting_site_name, planting_site_lat, planting_site_lon)) %>% 
   unique() %>% 
   filter(!is.na(planting_site_lat)) %>% 
-  vect(geom=c("planting_site_lon","planting_site_lat"), crs=crs(us))
+  vect(geom=c("planting_site_lon","planting_site_lat"), crs="EPSG:4326")
 
 provs_vect <- data %>% 
   select(c(provenance_name, provenance_lat, provenance_lon)) %>% 
   unique() %>% 
   filter(!is.na(provenance_lat)) %>% 
-  vect(geom=c("provenance_lon","provenance_lat"), crs=crs(us))
+  vect(geom=c("provenance_lon","provenance_lat"), crs="EPSG:4326")
 
 
 ## 2. buffer all points by 4km
 
 all_buffered <- buffer(all_vect, width=4000)
 
-dem_pts_crop <- crop(dem_west, all_buffered)
-dem_pts_mask <- mask(dem_pts_crop, all_buffered)
+dem_pts_crop <- crop(dem_west, all_buffered %>% project(crs(dem_west)))
+dem_pts_mask <- mask(dem_pts_crop, all_buffered %>% project(crs(dem_west)))
 
 writeRaster(dem_pts_mask, "C:/Users/katherinenigro/Box/01. katherine.nigro Workspace/SST_validation/data/gmted_mea150_crop_bufferedpts.tif", overwrite=TRUE)
 
